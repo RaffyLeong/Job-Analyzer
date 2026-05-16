@@ -1,7 +1,7 @@
 
 interface Step1Props {
   profile: {
-    role: string;
+    roles: string[];
     experience: string;
   }
   onUpdate: (update: any) => void // Callback to update parent state
@@ -32,6 +32,12 @@ const EXPERIENCE = [
 ]
 
 const Step1 = ({ profile, onUpdate }: Step1Props) => {
+  const toggleRole = (role: string) => {
+    const newRoles = profile.roles?.includes(role)
+      ? profile.roles.filter((r) => r !== role)  // Remove if already selected
+      : [...(profile.roles || []), role];        // Add if not selected
+    onUpdate({ roles: newRoles });
+  };
   return (
     <div>
       <h2 className="text-3xl font-bold text-blue-600 mb-2 dark:text-blue-500">Choose Your Role</h2>
@@ -53,9 +59,9 @@ const Step1 = ({ profile, onUpdate }: Step1Props) => {
           {ROLES.map((role) => (
             <button
               key={role}
-              onClick={() => onUpdate({ role })}
+              onClick={() => toggleRole(role)}
               className={`p-4 rounded-xl border-2 text-left transition-all border-gray-300
-                ${profile.role === role
+                ${profile.roles?.includes(role)
                   ?  'bg-blue-500 ' 
                   : ' hover:border-blue-300'
                 }`}

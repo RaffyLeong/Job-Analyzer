@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import MainApp from "./pages/MainApp";
 
 interface UserProfile {
-    role: string;
+    roles: string[];
     skills: string[];
     experience: string; 
     description: string;
@@ -12,21 +12,21 @@ interface UserProfile {
 // Main App component - controls whether to show the analyzer or completion screen
 function App() {
     const [hasCompletedPage, setHasCompletedPage] = useState(false) // Check if user has already completed the profile setup
+
+    const [startFromStep, setStartFromStep] = useState<number>(1) // Track which step to start from
     // Store the user's profile data
     const [userProfile, setUserProfile] = useState<UserProfile>({
-        role: '',
+        roles: [],
         skills: [],
         experience: '', 
         description: '',
     })
+    const [isLoading, setIsLoading] = useState(true)
+    
 
     // On component mount, check localStorage for saved profile
     useEffect(() => {
-        const savedProfile = localStorage.getItem('jobAnalyzerProfile')
-        if (savedProfile) {
-            setUserProfile(JSON.parse(savedProfile))
-            setHasCompletedPage(true) // User already has a profile
-        }
+        setIsLoading(false)
     }, [])
 
     // Called when user completes the analysis flow
@@ -39,17 +39,30 @@ function App() {
     // Reset everything - clears localStorage and starts fresh
     const handleReset = () => {
         localStorage.removeItem('jobAnalyzerProfile')
-        setUserProfile({ role: '', skills: [], experience: '', description: '' })
+        setUserProfile({ roles: [], skills: [], experience: '', description: '' })
         setHasCompletedPage(false)
+        setStartFromStep(1) // Start from step 1 for new analysis
     }
 
+    const handleAnalyzeAnotherJob = () => {
+        setStartFromStep(3) // Start from step 3 for analyzing another job
+        setHasCompletedPage(false) // Show the MainApp again
+    }
+
+    if (isLoading) {
+        return <div>Loading...</div> // Or a spinner
+    }
 
     // If user hasn't completed profile, show the MainApp
     // if user has completed, then show the success screen
     return (
         <div>
             {!hasCompletedPage ? (
-                <MainApp onComplete={handleCompletedPage}/>
+                <MainApp 
+                onComplete={handleCompletedPage}
+                initialStep={startFromStep}
+                initialProfile={userProfile}
+                />
             ) : (
                 <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-300 p-4 dark:from-gray-900 dark:to-gray-800">
           <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md dark:bg-gray-700 ">
@@ -60,17 +73,28 @@ function App() {
             </p>
             <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left dark:bg-gray-700">
               <p className="text-sm text-gray-700 dark:text-white border border-gray-200 p-4 rounded-lg">
-                <strong className="dark:text-blue-500">Role:</strong> {userProfile.role || "Not set"}<br />
+                <strong className="dark:text-blue-500">Roles:</strong> {userProfile.roles?.join(', ') || "Not set"}<br />
                 <strong className="dark:text-blue-500">Experience:</strong> {userProfile.experience || "Not set"}<br />
                 <strong className="dark:text-blue-500">Skills:</strong> {userProfile.skills.length} selected
               </p>
             </div>
+            <div className="gap-3">
+              <button
+                onClick={handleAnalyzeAnotherJob}
+                className="px-10 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium"
+              >
+                Analyze Another Job
+              </button>
             <button
               onClick={handleReset}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium w-full"
+              className="px-6 py-3 text-blue-600 hover:underline font-medium w-full"
             >
               Start New Analysis
             </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-4 dark:text-gray-300">
+              "Analyze New Job" keeps your role, experience & skills • "Start New Analysis" resets everything
+            </p>
           </div>
         </div>
       )}

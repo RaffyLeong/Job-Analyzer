@@ -1,8 +1,14 @@
+//No API key required
+
+// Works offline
+// Much more flexible than hardcoded keywords
+// Easy to maintain
+
 import { useEffect, useState } from "react";
 
 interface Step4Prop {
   profile: {
-    role: string;
+    roles: string[];
     skills: string[];
     experience: string;
     description: string;
@@ -49,11 +55,83 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     }
   }, [profile.description]);
 
+  // this is check the matching role between user selected role and job description, it gives a score from 0 to 100
+  const analyzeRoleWithMatching = (userRoles: string[], jobText: string): number => {
+    const textLower = jobText.toLowerCase();
+    let bestRoleScore = 0;
+    
+    for (const selectedRole of userRoles) {
+        const roleLower = selectedRole.toLowerCase();
+        
+        // 1. If you selected "Front-End Developer" and job says "Front-End Developer"
+        if (textLower.includes(roleLower)) {
+            bestRoleScore = Math.max(bestRoleScore, 100);
+            continue;
+        }
+        
+        // 2. You selected "Front-End Developer" and Job says "Frontend Developer" (missing the hyphen)
+        // It matches "Front" + "Developer" = 2 out of 2 words = 100%
+        const roleWords = roleLower.split(' ');
+        let matchedWords = 0;
+        let partialMatches = 0;
+        
+        for (const word of roleWords) {
+            if (word.length < 3) continue;
+            
+            if (textLower.includes(word)) {
+                matchedWords++;
+            } else {
+                const textWords = textLower.split(' ');
+                for (const textWord of textWords) {
+                    if (textWord.includes(word) || word.includes(textWord)) {
+                        partialMatches++;
+                        break;
+                    }
+                }
+            }
+        }
+        // this part is CALCULATION the role 
+        const wordMatchScore = roleWords.length > 0 
+            ? ((matchedWords + (partialMatches * 0.5)) / roleWords.length) * 100
+            : 0;
+        
+        // 3. You selected "Machine Learning Engineer", Job says "ML Engineer" or "AI Engineer", Recognizes these as related → 75% match
+        const variations: Record<string, string[]> = {
+            'developer': ['dev', 'engineer', 'programmer', 'coder'],
+            'front end': ['frontend', 'ui', 'client side'],
+            'back end': ['backend', 'server side', 'api'],
+            'full stack': ['fullstack', 'mean', 'mern'],
+            'machine learning': ['ml', 'ai'],
+            'mobile': ['ios', 'android', 'react native'],
+            'cloud': ['aws', 'azure', 'devops'],
+            'security': ['cyber', 'infosec'],
+            'product': ['pm', 'product owner'],
+            'engineering manager': ['tech lead', 'team lead']
+        };
+        
+        let variationScore = 0;
+        for (const [key, variants] of Object.entries(variations)) {
+            if (roleLower.includes(key)) {
+                for (const variant of variants) {
+                    if (textLower.includes(variant)) {
+                        variationScore = 75;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        const roleBestScore = Math.max(wordMatchScore, variationScore);
+        bestRoleScore = Math.max(bestRoleScore, roleBestScore);
+    }
+    
+    return bestRoleScore;
+  };
+
   // ===================== Main Analyze function =====================
   const analyzeJobDescription = () => {
     const text = profile.description;
     if (!text.trim()) return; // if no description Exit
-
 
 
     // ======== SKILLS ANALYSIS (50%) ========
@@ -61,19 +139,15 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     const requireSkills = techSkills.filter((skill) =>
       text.toLowerCase().includes(skill.toLowerCase()),
     );
-
     const uniqueRequireSkills = [...new Set(requireSkills)];  // Remove same skill mentioned multiple times
-
     // Find which required skills the user actually has click in the page 2
     const matchSkills = profile.skills.filter((skill) =>
       uniqueRequireSkills.includes(skill),
     );
-
     // Find skills mentioned in job that user doesn't have
     const missingSkills = uniqueRequireSkills.filter(
       (skill) => !profile.skills.includes(skill),
     );
-
     // Calculate skills score: (user's matching skills / total required skills) * 100
     const skillsScore =
       uniqueRequireSkills.length > 0
@@ -81,41 +155,12 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
         : 0;
 
 
-
     // ======== Role ANALYSIS (25% weight) ========
     // check if users role is in job description
     let roleScore = 0;
-    if (profile.role) {
-      const roleLower = profile.role.toLowerCase();
-      const textLower = text.toLowerCase();
-
-      // Check if exact role is mentioned
-      if (textLower.includes(roleLower)) {
-        roleScore = 100;
-      } else {
-        const roleKeywords = {
-          "front-end developer": [ "frontend", "front end", "ui developer", "react developer"],
-          "back-end developer": [ "backend", "back end", "server side", "api developer"],
-          "full-stack developer": [ "fullstack","full stack", "mern stack", "mean stack" ],
-          "machine learning engineer": [ "ml engineer", "ai engineer", "data scientist" ],
-          "mobile developer": [ "IOS developer", "android developer", "react native" ],
-          "cybersecurity specialist": [ "security analyst", "security engineer", "infosec" ],
-          "cloud engineer/architect": [ "cloud developer","aws engineer","azure engineer" ],
-          "ux/ui designer": [ "ui/ux", "user experience", "user interface" ],
-          "product manager": [ "product owner", "pm", "product lead" ],
-          "engineering manager": [ "tech lead","team lead", "development manager" ],
-        };
-
-        // Check if any related keywords are mentioned
-        const relatedKeywords = roleKeywords[roleLower as keyof typeof roleKeywords] || [];
-        if (relatedKeywords.some((keyword) => textLower.includes(keyword))) {
-          roleScore = 75; // Good match
-        } else {
-          roleScore = 25; // Weak match
-        }
-      }
+    if (profile.roles && profile.roles.length > 0) {
+        roleScore = analyzeRoleWithMatching(profile.roles, text);
     }
-
 
 
     // ======== Experience ANALYSIS (25% weight) ========
@@ -179,14 +224,14 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
           line.includes("require") ||
           line.includes("ability") ||
           line.includes("qualification") ||
-          line.includes("responsibilit") ||
+          line.includes("responsibility") ||
           line.includes("duties") ||
           line.includes("must have") ||
           line.includes("should have"),
       )
       .map((line) => line.trim())
       .filter((line) => line.length > 10) // Skip very short lines
-      .slice(0, 6); // Take first 6 requirementsx
+      .slice(0, 6); // Take first 6 requirements
 
     
 
@@ -263,7 +308,9 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
           <div>
             <p className="text-sm text-gray-800 mb-1 dark:text-white">Role</p>
             <p className="font-medium text-blue-600">
-              {profile.role || "No specified"}
+              {profile.roles && profile.roles.length > 0 
+                    ? profile.roles.join(", ") 
+                    : "No roles specified"}
             </p>
           </div>
 

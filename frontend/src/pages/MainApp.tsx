@@ -8,30 +8,33 @@ import HistoryDropdown from "../components/HistoryDropdown"
 
 interface StepPageProps {
     onComplete: (profile: any) => void
+    initialStep?: number; // starting step (defaults to 1)
+    initialProfile?: UserProfile; // pre-filled profile data
 }
 
 interface UserProfile {
-    role: string;
+    roles: string[];
     skills: string[];
     experience: string;
     description: string;
 }
 
-const StepPage = ({ onComplete } : StepPageProps) => {
+const StepPage = ({ onComplete, initialStep = 1, initialProfile } : StepPageProps) => {
     const [ darkMode, setDarkMode ] = useState(false) // Dark Mode
     const toggleDarkMode = () => {
         setDarkMode(!darkMode)
     }
 
     const [matchPercentage, setMatchPercentage] = useState("0"); // MATCH PERCENTAGE - gets updated by Step4 analysis
-    const [ currentStep, setCurrentStep ] = useState(1) // page 1 - 4, start with page 1
+    const [ currentStep, setCurrentStep ] = useState(initialStep) // page 1 - 4, start with page 1
     // user profile, data colleced across all steps
     const [ userProfile, setUserProfile ] = useState<UserProfile>({
-        role: '',
-        skills: [],
-        experience: '',
-        description: '',
+        roles: initialProfile?.roles || [],
+        skills: initialProfile?.skills || [],
+        experience: initialProfile?.experience || '',
+        description: initialProfile?.description || '',
     })
+
 
     // save to backend - tries API first, falls back to localStorage
     const saveToBackend = async (historyData: any) => {
@@ -96,7 +99,7 @@ const StepPage = ({ onComplete } : StepPageProps) => {
     // Finish button - saves analysis to history
     const finishButton = () => {
         const historyData = {
-            role: userProfile.role,
+            roles: userProfile.roles,
             experience: userProfile.experience,
             skills: userProfile.skills,
             description: userProfile.description,
