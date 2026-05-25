@@ -1,4 +1,4 @@
-// Step4.tsx - AI-powered job description analysis using Ollama
+// Step4.tsx - Hybrid Analysis (Fallback for Macau, AI for UK)
 import { useEffect, useState } from "react";
 
 interface Step4Prop {
@@ -23,7 +23,90 @@ interface AnalysisType {
 }
 
 // ============================================
-// AI FUNCTION - Calls Ollama for smart analysis
+// TECH SKILLS LIST (for fallback analysis)
+// ============================================
+const techSkills = [
+  "React", "TypeScript", "JavaScript", "Python", "Java", "C#", "Go", "Node.js", "Express", 
+  "Next.js", "Vue", "Angular", "Tailwind CSS", "CSS", "SCSS", "Bootstrap", "HTML", "MongoDB", 
+  "PostgreSQL", "MySQL", "AWS", "Docker", "Git", "REST", "GraphQL", "Redux", "Jest", "React Native", 
+  "Flutter", "Dart", "Swift", "Figma", "Vite", "REST API", "React.js", "ReactJS", "Spring Boot", "Azure", 
+  "Google Cloud", "Kubernetes", "CI/CD", "Jenkins", "GitHub Actions", "Agile", "Scrum", "JIRA", "Confluence", 
+  "Postman", "Swagger", "Microservices", "SQL", "NoSQL", "Firebase", "Redis", "Elasticsearch"
+];
+
+// ============================================
+// ROLE MATCHING (for fallback analysis)
+// ============================================
+const analyzeRoleWithMatching = (userRoles: string[], jobText: string): number => {
+  const textLower = jobText.toLowerCase();
+  let bestRoleScore = 0;
+  
+  for (const selectedRole of userRoles) {
+    const roleLower = selectedRole.toLowerCase();
+    
+    if (textLower.includes(roleLower)) {
+      bestRoleScore = Math.max(bestRoleScore, 100);
+      continue;
+    }
+    
+    const roleWords = roleLower.split(' ');
+    let matchedWords = 0;
+    let partialMatches = 0;
+    
+    for (const word of roleWords) {
+      if (word.length < 3) continue;
+      
+      if (textLower.includes(word)) {
+        matchedWords++;
+      } else {
+        const textWords = textLower.split(' ');
+        for (const textWord of textWords) {
+          if (textWord.includes(word) || word.includes(textWord)) {
+            partialMatches++;
+            break;
+          }
+        }
+      }
+    }
+    
+    const wordMatchScore = roleWords.length > 0 
+      ? ((matchedWords + (partialMatches * 0.5)) / roleWords.length) * 100
+      : 0;
+    
+    const variations: Record<string, string[]> = {
+      'developer': ['dev', 'engineer', 'programmer', 'coder'],
+      'front end': ['frontend', 'ui', 'client side'],
+      'back end': ['backend', 'server side', 'api'],
+      'full stack': ['fullstack', 'mean', 'mern'],
+      'machine learning': ['ml', 'ai'],
+      'mobile': ['ios', 'android', 'react native'],
+      'cloud': ['aws', 'azure', 'devops'],
+      'security': ['cyber', 'infosec'],
+      'product': ['pm', 'product owner'],
+      'engineering manager': ['tech lead', 'team lead']
+    };
+    
+    let variationScore = 0;
+    for (const [key, variants] of Object.entries(variations)) {
+      if (roleLower.includes(key)) {
+        for (const variant of variants) {
+          if (textLower.includes(variant)) {
+            variationScore = 75;
+            break;
+          }
+        }
+      }
+    }
+    
+    const roleBestScore = Math.max(wordMatchScore, variationScore);
+    bestRoleScore = Math.max(bestRoleScore, roleBestScore);
+  }
+  
+  return bestRoleScore;
+};
+
+// ============================================
+// AI FUNCTION - Calls Ollama (will work in UK)
 // ============================================
 const analyzeWithLocalAI = async (jobDescription: string, userProfile: any) => {
   try {
@@ -65,7 +148,7 @@ ${jobDescription.substring(0, 4000)}`;
 };
 
 // ============================================
-// this part is for Text Parsing - extracts requirements from job description text
+// TEXT PARSING - extracts requirements
 // ============================================
 const extractRequirementsFromText = (text: string): string[] => {
   const extractedRequirements: string[] = [];
@@ -83,7 +166,6 @@ const extractRequirementsFromText = (text: string): string[] => {
     const line = lines[i].trim();
     const lowerLine = line.toLowerCase();
 
-    // Check if this line starts a requirements section
     for (const keyword of requirementKeywords) {
       if (lowerLine.includes(keyword.toLowerCase())) {
         inRequirementsSection = true;
@@ -91,26 +173,21 @@ const extractRequirementsFromText = (text: string): string[] => {
       }
     }
     
-    // If we're in requirements section, collect bullet points
     if (inRequirementsSection) {
-      // Stop if we hit another section header
       if (line.match(/^(What We Offer|Benefits|Nice to Have|About Us)/i)) {
         break;
       }
       
-      // SKIP header lines that end with colon or look like section titles
       if (line.match(/:$/) || line.match(/^(Role Responsibilities|Technical Requirements|Requirements|Qualifications)$/i)) {
         continue;
       }
       
-      // Collect bullet points or numbered items
       if (line.match(/^[-•*]\s/) || line.match(/^\d+\./) || line.match(/^[a-z]\)/)) {
         let cleanLine = line.replace(/^[-•*]\s/, '').replace(/^\d+\.\s/, '').replace(/^[a-z]\)\s/, '');
         if (cleanLine.length > 10 && cleanLine.length < 200) {
           extractedRequirements.push(cleanLine);
         }
       }
-      // Also collect non-bullet lines that look like requirements
       else if (line.length > 15 && line.length < 150 && !line.match(/^[A-Z][a-z]+:$/)) {
         if (!line.includes('competitive salary') && !line.includes('benefits')) {
           if (!line.match(/^(Role Responsibilities|Technical Requirements|Requirements|Qualifications)$/i)) {
@@ -121,7 +198,6 @@ const extractRequirementsFromText = (text: string): string[] => {
     }
   }
   
-  // If we didn't find bullet points, try a simpler approach
   if (extractedRequirements.length === 0) {
     const requirementPhrases = [
       'experience with', 'knowledge of', 'familiarity with', 'proficiency in',
@@ -139,8 +215,84 @@ const extractRequirementsFromText = (text: string): string[] => {
     }
   }
   
-  // Limit to top 5 requirements
   return extractedRequirements.slice(0, 5);
+};
+
+// ============================================
+// FALLBACK ANALYSIS (Works in Macau, no setup)
+// ============================================
+const runFallbackAnalysis = (profile: any, setAnalysis: any, onMatchCalculated?: any) => {
+  const text = profile.description;
+  if (!text.trim()) return;
+
+  // Skills analysis
+  const requireSkills = techSkills.filter((skill) =>
+    text.toLowerCase().includes(skill.toLowerCase()),
+  );
+  const uniqueRequireSkills = [...new Set(requireSkills)];
+  const matchSkills = profile.skills.filter((skill: string) =>
+    uniqueRequireSkills.includes(skill),
+  );
+  const missingSkills = uniqueRequireSkills.filter(
+    (skill) => !profile.skills.includes(skill),
+  );
+  const skillsScore = uniqueRequireSkills.length > 0
+    ? (matchSkills.length / uniqueRequireSkills.length) * 100
+    : 0;
+
+  // Role analysis
+  let roleScore = 0;
+  if (profile.roles && profile.roles.length > 0) {
+    roleScore = analyzeRoleWithMatching(profile.roles, text);
+  }
+
+  // Experience analysis
+  let experienceScore = 0;
+  if (profile.experience) {
+    const expLevels = ["0-2 years", "2-4 years", "4-6 years", "6-8 years", "8+ years"];
+    const userExpIndex = expLevels.indexOf(profile.experience);
+    const expRegex = /(\d+)\+?\s*years?\s*(?:of)?\s*experience/gi;
+    const matches = [...text.matchAll(expRegex)];
+
+    if (matches.length > 0) {
+      const jobExpYears = Math.max(...matches.map((m) => parseInt(m[1])));
+      const jobExpLevels = [
+        { maxYears: 2, level: "0-2 years" },
+        { maxYears: 4, level: "2-4 years" },
+        { maxYears: 6, level: "4-6 years" },
+        { maxYears: 8, level: "6-8 years" },
+        { maxYears: Infinity, level: "8+ years" },
+      ];
+      const jobExpLevel = jobExpLevels.find((level) => jobExpYears <= level.maxYears)?.level || "8+ years";
+      const jobExpIndex = expLevels.indexOf(jobExpLevel);
+      
+      if (userExpIndex >= jobExpIndex) {
+        experienceScore = 100;
+      } else {
+        const diff = jobExpIndex - userExpIndex;
+        experienceScore = Math.max(0, 100 - diff * 25);
+      }
+    } else {
+      experienceScore = 50;
+    }
+  }
+
+  const totalMatch = Math.round(roleScore * 0.25 + experienceScore * 0.25 + skillsScore * 0.5);
+  const requirements = extractRequirementsFromText(text);
+
+  setAnalysis({
+    match: totalMatch.toString(),
+    techSkill: uniqueRequireSkills,
+    requirements: requirements.length > 0 ? requirements : ["Key requirements could not be extracted."],
+    missingSkills: missingSkills,
+    matchingSkills: matchSkills,
+    roleMatch: `${Math.round(roleScore)}%`,
+    experienceMatch: `${Math.round(experienceScore)}%`,
+  });
+
+  if (onMatchCalculated) {
+    onMatchCalculated(totalMatch.toString());
+  }
 };
 
 // ============================================
@@ -157,47 +309,69 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     experienceMatch: "0%",
   });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [usingAI, setUsingAI] = useState(false);
+  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
+
+  // Check if Ollama is available (will be true in UK)
+  useEffect(() => {
+    const checkOllama = async () => {
+      try {
+        const response = await fetch("http://localhost:11434/api/tags");
+        if (response.ok) {
+          setOllamaAvailable(true);
+        } else {
+          setOllamaAvailable(false);
+        }
+      } catch {
+        setOllamaAvailable(false);
+      }
+    };
+    checkOllama();
+  }, []);
 
   // ============================================
-  // AI ANALYSIS ONLY (no fallback)
+  // HYBRID ANALYSIS: Fallback always works, AI when available
   // ============================================
   const analyzeJobDescription = async () => {
     const text = profile.description;
     if (!text.trim()) return;
 
     setIsAnalyzing(true);
-    setError(null);
     
-    try {
-      const aiResult = await analyzeWithLocalAI(text, profile);
-      
-      if (aiResult && aiResult.matchPercentage) {
-        // Extract requirements from the job description text
-        const finalRequirements = extractRequirementsFromText(text);
+    // Step 1: Run fallback analysis immediately (works in Macau and UK)
+    runFallbackAnalysis(profile, setAnalysis, onMatchCalculated);
+    
+    // Step 2: If Ollama is available, try AI for better results (will work in UK)
+    if (ollamaAvailable) {
+      try {
+        const aiResult = await analyzeWithLocalAI(text, profile);
         
-        setAnalysis({
-          match: aiResult.matchPercentage.toString(),
-          techSkill: aiResult.requiredSkills || [],
-          matchingSkills: aiResult.matchingSkills || [],
-          missingSkills: aiResult.missingSkills || [],
-          roleMatch: "AI Calculated",
-          experienceMatch: "AI Calculated",
-          requirements: finalRequirements.length > 0 ? finalRequirements : ["Unable to extract requirements from job description"],
-        });
-        
-        if (onMatchCalculated) {
-          onMatchCalculated(aiResult.matchPercentage.toString());
+        if (aiResult && aiResult.matchPercentage) {
+          const finalRequirements = extractRequirementsFromText(text);
+          
+          setAnalysis({
+            match: aiResult.matchPercentage.toString(),
+            techSkill: aiResult.requiredSkills || [],
+            matchingSkills: aiResult.matchingSkills || [],
+            missingSkills: aiResult.missingSkills || [],
+            roleMatch: "AI Calculated",
+            experienceMatch: "AI Calculated",
+            requirements: finalRequirements.length > 0 ? finalRequirements : ["Unable to extract requirements from job description"],
+          });
+          
+          setUsingAI(true);
+          
+          if (onMatchCalculated) {
+            onMatchCalculated(aiResult.matchPercentage.toString());
+          }
         }
-      } else {
-        setError("AI returned an invalid response. Please try again.");
+      } catch (err) {
+        console.log("AI enhancement failed, keeping fallback results");
+        setUsingAI(false);
       }
-    } catch (err) {
-      console.error("AI Analysis failed:", err);
-      setError("Failed to connect to Ollama. Make sure Ollama is running (http://localhost:11434)");
-    } finally {
-      setIsAnalyzing(false);
     }
+    
+    setIsAnalyzing(false);
   };
 
   // Run analysis when description changes
@@ -205,7 +379,7 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     if (profile.description) {
       analyzeJobDescription();
     }
-  }, [profile.description]);
+  }, [profile.description, ollamaAvailable]);
 
   // UI Helper Functions
   const getMatchColor = (match: number) => {
@@ -231,7 +405,11 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
       </h2>
       <p className="text-gray-600 mb-8 dark:text-white">
         Here's how your profile matches with the job description
-        <span className="text-green-500 text-sm ml-2">✓ AI-powered by Ollama</span>
+        {usingAI ? (
+          <span className="text-green-500 text-sm ml-2">✓ AI-enhanced (Ollama)</span>
+        ) : (
+          <span className="text-blue-500 text-sm ml-2">✓ Smart Matching</span>
+        )}
       </p>
       <div className="mt-6 flex items-center gap-2 mb-20">
         <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
@@ -239,12 +417,11 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
         <div className="w-3 h-1 bg-blue-200 rounded-full"></div>
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-8 dark:bg-red-900/20 dark:border-red-800">
-          <p className="text-red-600 dark:text-red-400">{error}</p>
-          <p className="text-sm text-red-500 mt-2 dark:text-red-300">
-            Make sure Ollama is installed and running: <code className="bg-red-100 px-1 rounded">ollama serve</code>
+      {/* Show Ollama hint when not available */}
+      {ollamaAvailable === false && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6 dark:bg-blue-900/20 dark:border-blue-800">
+          <p className="text-blue-600 text-sm dark:text-blue-400">
+            💡 Tip: Install Ollama for AI-powered insights when you're in the UK
           </p>
         </div>
       )}
@@ -277,6 +454,20 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
           </div>
         </div>
       </div>
+
+      {/* Role & Experience Match (only for fallback mode) */}
+      {!usingAI && (
+        <div className="grid md:grid-cols-2 gap-4 mb-8">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 dark:bg-gray-700">
+            <p className="text-sm text-gray-600 mb-1 dark:text-gray-300">Role Match</p>
+            <p className="text-2xl font-bold text-blue-600">{analysis.roleMatch}</p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 dark:bg-gray-700">
+            <p className="text-sm text-gray-600 mb-1 dark:text-gray-300">Experience Match</p>
+            <p className="text-2xl font-bold text-blue-600">{analysis.experienceMatch}</p>
+          </div>
+        </div>
+      )}
 
       {/* Overall Match Circle */}
       <div className="text-center mb-12">
