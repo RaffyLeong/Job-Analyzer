@@ -43,7 +43,7 @@ const Step2 = ({ profile, onUpdate }: Step2Prop) => {
         Choose the skills you're comfortable with. Be honest - this helps us
         give you better job match insights.
       </p>
-      <div className="mt-6 flex items-center gap-2 mb-20">
+      <div className="mt-6 flex items-center gap-2 mb-10">
         <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
         <div className="w-6 h-1 bg-blue-300 rounded-full"></div>
         <div className="w-3 h-1 bg-blue-200 rounded-full"></div>

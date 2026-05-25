@@ -44,14 +44,14 @@ const Step1 = ({ profile, onUpdate }: Step1Props) => {
       <p className="text-gray-500 mb-8 dark:text-white">
         Select the job title you're interested in applying for
       </p>
-      <div className="mt-6 flex items-center gap-2 mb-20">
+      <div className="flex items-center gap-2 mb-10">
         <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
         <div className="w-6 h-1 bg-blue-300 rounded-full"></div>
         <div className="w-3 h-1 bg-blue-200 rounded-full"></div>
       </div>
 
       {/* Role Selection */}
-      <div className="mb-20">
+      <div className="mb-10">
         <h3 className="text-lg font-semibold text-gray-800 mb-4 dark:text-white">
           Select Your Target Role
         </h3>

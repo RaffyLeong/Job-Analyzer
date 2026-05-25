@@ -27,7 +27,7 @@ const Step3 = ({ profile, onUpdate }: Step3Prop) => {
       
       <div className="min-h-screen p-4 mb-10 md:p-8 bg-white dark:bg-gray-700">
         {/* Header */}
-        <header className="max-w-6xl mx-auto mb-10 pb-8 border-b border-gray-200">
+        <header className="max-w-6xl mx-auto pb-8 border-b border-gray-200">
           <h2 className="text-[32px] md:text-4xl text-blue-600 font-semibold mb-2 dark:text-blue-500">
               Paste any job description
             </h2>

@@ -153,7 +153,7 @@ const StepPage = ({ onComplete, initialStep = 1, initialProfile } : StepPageProp
                 )}
             </div>
 
-            <div className="flex justify-between mt-12 pt-8 border-t">
+            <div className="flex justify-between mt-8 pt-8 border-t">
                     {/* Back button */}
                 <button onClick={backButton} className={`px-6 py-3 rounded-lg font-medium ${currentStep === 1 ? 
                     'invisible' : 'bg-gray-100 text-gray-700 hover:bg-gray-300'}`}

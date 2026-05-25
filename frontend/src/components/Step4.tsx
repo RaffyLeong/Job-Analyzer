@@ -1,4 +1,4 @@
-// Step4.tsx - Hybrid Analysis (Fallback for Macau, AI for UK)
+// Step4.tsx - Hybrid Analysis (Fallback for Macau, AI for UK) Groq
 import { useEffect, useState } from "react";
 
 interface Step4Prop {
@@ -411,20 +411,11 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
           <span className="text-blue-500 text-sm ml-2">✓ Smart Matching</span>
         )}
       </p>
-      <div className="mt-6 flex items-center gap-2 mb-20">
+      <div className="mt-6 flex items-center gap-2 mb-10">
         <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
         <div className="w-6 h-1 bg-blue-300 rounded-full"></div>
         <div className="w-3 h-1 bg-blue-200 rounded-full"></div>
       </div>
-
-      {/* Show Ollama hint when not available */}
-      {ollamaAvailable === false && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6 dark:bg-blue-900/20 dark:border-blue-800">
-          <p className="text-blue-600 text-sm dark:text-blue-400">
-            💡 Tip: Install Ollama for AI-powered insights when you're in the UK
-          </p>
-        </div>
-      )}
 
       {/* Profile Summary */}
       <div className="bg-gray-50 rounded-xl p-6 mb-8 dark:bg-gray-700">
