@@ -1,9 +1,4 @@
-//No API key required
-
-// Works offline
-// Much more flexible than hardcoded keywords
-// Easy to maintain
-
+// Step4.tsx - AI-powered job description analysis using Ollama
 import { useEffect, useState } from "react";
 
 interface Step4Prop {
@@ -27,17 +22,131 @@ interface AnalysisType {
   experienceMatch: string;
 }
 
-const techSkills = [
-  "React", "TypeScript", "JavaScript", "Python", "Java", "C#", "Go", "Node.js", "Express", 
-  "Next.js", "Vue", "Angular", "Tailwind CSS", "CSS", "SCSS", "Bootstrap", "HTML", "MongoDB", 
-  "PostgreSQL", "MySQL", "AWS", "Docker", "Git", "REST", "GraphQL", "Redux", "Jest", "React Native", 
-  "Flutter", "Dart", "Swift", "Figma", "Vite", "REST API", "React.js", "ReactJS", "Spring Boot", "Azure", 
-  "Google Cloud", "Kubernetes", "CI/CD", "Jenkins", "GitHub Actions", "Agile", "Scrum", "JIRA", "Confluence", 
-  "Postman", "Swagger", "Microservices", "SQL", "NoSQL", "Firebase", "Redis", "Elasticsearch"
+// ============================================
+// AI FUNCTION - Calls Ollama for smart analysis
+// ============================================
+const analyzeWithLocalAI = async (jobDescription: string, userProfile: any) => {
+  try {
+    const prompt = `You are a job matching expert. Analyze this job description against the candidate's profile.
+
+Return ONLY valid JSON with no extra text. Format exactly like this:
+{
+  "matchPercentage": 75,
+  "requiredSkills": ["Skill1", "Skill2"],
+  "matchingSkills": ["Skill1"],
+  "missingSkills": ["Skill2"]
+}
+
+Candidate:
+- Skills: ${userProfile.skills.join(", ")}
+- Experience: ${userProfile.experience}
+- Target roles: ${userProfile.roles.join(", ")}
+
+Job Description:
+${jobDescription.substring(0, 4000)}`;
+
+    const response = await fetch("http://localhost:11434/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "llama3.2:3b",
+        prompt: prompt,
+        stream: false,
+        format: "json"
+      })
+    });
+
+    const data = await response.json();
+    return JSON.parse(data.response);
+  } catch (error) {
+    console.error("Local AI failed:", error);
+    return null;
+  }
+};
+
+// ============================================
+// this part is for Text Parsing - extracts requirements from job description text
+// ============================================
+const extractRequirementsFromText = (text: string): string[] => {
+  const extractedRequirements: string[] = [];
+
+  const requirementKeywords = [
+    "Technical Requirements", "Requirements", "What you'll need", 
+    "Qualifications", "Required Skills", "Minimum Qualifications",
+    "Ideal Candidate", "Role Responsibilities"
   ];
 
+  const lines = text.split('\n');
+  let inRequirementsSection = false;
+
+  for(let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const lowerLine = line.toLowerCase();
+
+    // Check if this line starts a requirements section
+    for (const keyword of requirementKeywords) {
+      if (lowerLine.includes(keyword.toLowerCase())) {
+        inRequirementsSection = true;
+        continue;
+      }
+    }
+    
+    // If we're in requirements section, collect bullet points
+    if (inRequirementsSection) {
+      // Stop if we hit another section header
+      if (line.match(/^(What We Offer|Benefits|Nice to Have|About Us)/i)) {
+        break;
+      }
+      
+      // SKIP header lines that end with colon or look like section titles
+      if (line.match(/:$/) || line.match(/^(Role Responsibilities|Technical Requirements|Requirements|Qualifications)$/i)) {
+        continue;
+      }
+      
+      // Collect bullet points or numbered items
+      if (line.match(/^[-•*]\s/) || line.match(/^\d+\./) || line.match(/^[a-z]\)/)) {
+        let cleanLine = line.replace(/^[-•*]\s/, '').replace(/^\d+\.\s/, '').replace(/^[a-z]\)\s/, '');
+        if (cleanLine.length > 10 && cleanLine.length < 200) {
+          extractedRequirements.push(cleanLine);
+        }
+      }
+      // Also collect non-bullet lines that look like requirements
+      else if (line.length > 15 && line.length < 150 && !line.match(/^[A-Z][a-z]+:$/)) {
+        if (!line.includes('competitive salary') && !line.includes('benefits')) {
+          if (!line.match(/^(Role Responsibilities|Technical Requirements|Requirements|Qualifications)$/i)) {
+            extractedRequirements.push(line);
+          }
+        }
+      }
+    }
+  }
+  
+  // If we didn't find bullet points, try a simpler approach
+  if (extractedRequirements.length === 0) {
+    const requirementPhrases = [
+      'experience with', 'knowledge of', 'familiarity with', 'proficiency in',
+      'understanding of', 'ability to', 'skill in', 'expertise in'
+    ];
+    
+    for (const line of lines) {
+      const lowerLine = line.toLowerCase();
+      for (const phrase of requirementPhrases) {
+        if (lowerLine.includes(phrase) && line.length > 10 && line.length < 200) {
+          extractedRequirements.push(line.trim());
+          break;
+        }
+      }
+    }
+  }
+  
+  // Limit to top 5 requirements
+  return extractedRequirements.slice(0, 5);
+};
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
-  // Stores all calculated results from Page 1 - 3
   const [analysis, setAnalysis] = useState<AnalysisType>({
     match: "0",
     techSkill: [],
@@ -47,6 +156,49 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     roleMatch: "0%",
     experienceMatch: "0%",
   });
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ============================================
+  // AI ANALYSIS ONLY (no fallback)
+  // ============================================
+  const analyzeJobDescription = async () => {
+    const text = profile.description;
+    if (!text.trim()) return;
+
+    setIsAnalyzing(true);
+    setError(null);
+    
+    try {
+      const aiResult = await analyzeWithLocalAI(text, profile);
+      
+      if (aiResult && aiResult.matchPercentage) {
+        // Extract requirements from the job description text
+        const finalRequirements = extractRequirementsFromText(text);
+        
+        setAnalysis({
+          match: aiResult.matchPercentage.toString(),
+          techSkill: aiResult.requiredSkills || [],
+          matchingSkills: aiResult.matchingSkills || [],
+          missingSkills: aiResult.missingSkills || [],
+          roleMatch: "AI Calculated",
+          experienceMatch: "AI Calculated",
+          requirements: finalRequirements.length > 0 ? finalRequirements : ["Unable to extract requirements from job description"],
+        });
+        
+        if (onMatchCalculated) {
+          onMatchCalculated(aiResult.matchPercentage.toString());
+        }
+      } else {
+        setError("AI returned an invalid response. Please try again.");
+      }
+    } catch (err) {
+      console.error("AI Analysis failed:", err);
+      setError("Failed to connect to Ollama. Make sure Ollama is running (http://localhost:11434)");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // Run analysis when description changes
   useEffect(() => {
@@ -55,225 +207,12 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     }
   }, [profile.description]);
 
-  // this is check the matching role between user selected role and job description, it gives a score from 0 to 100
-  const analyzeRoleWithMatching = (userRoles: string[], jobText: string): number => {
-    const textLower = jobText.toLowerCase();
-    let bestRoleScore = 0;
-    
-    for (const selectedRole of userRoles) {
-        const roleLower = selectedRole.toLowerCase();
-        
-        // 1. If you selected "Front-End Developer" and job says "Front-End Developer"
-        if (textLower.includes(roleLower)) {
-            bestRoleScore = Math.max(bestRoleScore, 100);
-            continue;
-        }
-        
-        // 2. You selected "Front-End Developer" and Job says "Frontend Developer" (missing the hyphen)
-        // It matches "Front" + "Developer" = 2 out of 2 words = 100%
-        const roleWords = roleLower.split(' ');
-        let matchedWords = 0;
-        let partialMatches = 0;
-        
-        for (const word of roleWords) {
-            if (word.length < 3) continue;
-            
-            if (textLower.includes(word)) {
-                matchedWords++;
-            } else {
-                const textWords = textLower.split(' ');
-                for (const textWord of textWords) {
-                    if (textWord.includes(word) || word.includes(textWord)) {
-                        partialMatches++;
-                        break;
-                    }
-                }
-            }
-        }
-        // this part is CALCULATION the role 
-        const wordMatchScore = roleWords.length > 0 
-            ? ((matchedWords + (partialMatches * 0.5)) / roleWords.length) * 100
-            : 0;
-        
-        // 3. You selected "Machine Learning Engineer", Job says "ML Engineer" or "AI Engineer", Recognizes these as related → 75% match
-        const variations: Record<string, string[]> = {
-            'developer': ['dev', 'engineer', 'programmer', 'coder'],
-            'front end': ['frontend', 'ui', 'client side'],
-            'back end': ['backend', 'server side', 'api'],
-            'full stack': ['fullstack', 'mean', 'mern'],
-            'machine learning': ['ml', 'ai'],
-            'mobile': ['ios', 'android', 'react native'],
-            'cloud': ['aws', 'azure', 'devops'],
-            'security': ['cyber', 'infosec'],
-            'product': ['pm', 'product owner'],
-            'engineering manager': ['tech lead', 'team lead']
-        };
-        
-        let variationScore = 0;
-        for (const [key, variants] of Object.entries(variations)) {
-            if (roleLower.includes(key)) {
-                for (const variant of variants) {
-                    if (textLower.includes(variant)) {
-                        variationScore = 75;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        const roleBestScore = Math.max(wordMatchScore, variationScore);
-        bestRoleScore = Math.max(bestRoleScore, roleBestScore);
-    }
-    
-    return bestRoleScore;
-  };
-
-  // ===================== Main Analyze function =====================
-  const analyzeJobDescription = () => {
-    const text = profile.description;
-    if (!text.trim()) return; // if no description Exit
-
-
-    // ======== SKILLS ANALYSIS (50%) ========
-    // Find which tech skills are mentioned in the job description
-    const requireSkills = techSkills.filter((skill) =>
-      text.toLowerCase().includes(skill.toLowerCase()),
-    );
-    const uniqueRequireSkills = [...new Set(requireSkills)];  // Remove same skill mentioned multiple times
-    // Find which required skills the user actually has click in the page 2
-    const matchSkills = profile.skills.filter((skill) =>
-      uniqueRequireSkills.includes(skill),
-    );
-    // Find skills mentioned in job that user doesn't have
-    const missingSkills = uniqueRequireSkills.filter(
-      (skill) => !profile.skills.includes(skill),
-    );
-    // Calculate skills score: (user's matching skills / total required skills) * 100
-    const skillsScore =
-      uniqueRequireSkills.length > 0
-        ? (matchSkills.length / uniqueRequireSkills.length) * 100
-        : 0;
-
-
-    // ======== Role ANALYSIS (25% weight) ========
-    // check if users role is in job description
-    let roleScore = 0;
-    if (profile.roles && profile.roles.length > 0) {
-        roleScore = analyzeRoleWithMatching(profile.roles, text);
-    }
-
-
-    // ======== Experience ANALYSIS (25% weight) ========
-    let experienceScore = 0;
-    if (profile.experience) {
-      // Experience levels from lowest to highest
-      const expLevels = [
-        "0-2 years", "2-4 years", "4-6 years", "6-8 years", "8+ years",
-      ];
-      const userExpIndex = expLevels.indexOf(profile.experience); // User's experience Level
-
-      // Look for experience requirements in job description
-      const expRegex = /(\d+)\+?\s*years?\s*(?:of)?\s*experience/gi;
-      const matches = [...text.matchAll(expRegex)];
-
-      if (matches.length > 0) {
-        // Get the highest experience requirement mentioned
-        const jobExpYears = Math.max(...matches.map((m) => parseInt(m[1])));
-
-        const jobExpLevels = [
-          { maxYears: 2, level: "0-2 years" },
-          { maxYears: 4, level: "2-4 years" },
-          { maxYears: 6, level: "4-6 years" },
-          { maxYears: 8, level: "6-8 years" },
-          { maxYears: Infinity, level: "8+ years" },
-        ];
-
-        const jobExpLevel =
-          jobExpLevels.find((level) => jobExpYears <= level.maxYears)?.level ||
-          "8+ years";
-        const jobExpIndex = expLevels.indexOf(jobExpLevel);
-
-        // Compare user's level with job requirement
-        if (userExpIndex >= jobExpIndex) {
-          experienceScore = 100; // User meets or exceeds requirement
-        } else {
-          // Calculate partial score based on how close they are
-          const diff = jobExpIndex - userExpIndex;
-          experienceScore = Math.max(0, 100 - diff * 25);
-        }
-      } else {
-        // No experience requirement found, give medium score
-        experienceScore = 50;
-      }
-    }
-
-    // 50% skills + 25% role + 25% experience
-    const totalMatch = Math.round(
-      roleScore * 0.25 + experienceScore * 0.25 + skillsScore * 0.5,
-    );
-
-    // ========== KEY REQUIREMENTS ==========
-    // looking from the job description line by line,  do any requirement-related phrases
-    const requirements = text
-      .split("\n")
-      .filter(
-        (line) =>
-          line.includes("experience") ||
-          line.includes("knowledge") ||
-          line.includes("skill") ||
-          line.includes("require") ||
-          line.includes("ability") ||
-          line.includes("qualification") ||
-          line.includes("responsibility") ||
-          line.includes("duties") ||
-          line.includes("must have") ||
-          line.includes("should have"),
-      )
-      .map((line) => line.trim())
-      .filter((line) => line.length > 10) // Skip very short lines
-      .slice(0, 6); // Take first 6 requirements
-
-    
-
-    const roleMatchPercentage = Math.round(roleScore);
-    const experienceMatchPercentage = Math.round(experienceScore);
-
-    // ========== UPDATE STATE WITH RESULTS ==========
-    setAnalysis({
-      match: totalMatch.toString(),
-      techSkill: uniqueRequireSkills,
-      requirements:
-        requirements.length > 0
-          ? requirements
-          : [
-              "Key requirements could not be extracted. Review the job description manually.",
-            ],
-      missingSkills: missingSkills,
-      matchingSkills: matchSkills,
-      roleMatch: `${roleMatchPercentage}%`,
-      experienceMatch: `${experienceMatchPercentage}%`,
-    });
-
-    
-    if (onMatchCalculated) {
-    onMatchCalculated(totalMatch.toString());
-  }
-  };
-
-  
-// Overall Match percentage color
+  // UI Helper Functions
   const getMatchColor = (match: number) => {
-    if (match >= 80) return "text-green-600";
-    if (match >= 60) return "text-yellow-600";
-    if (match >= 40) return "text-orange-600";
-    return "text-red-600";
-  };
-
-  const getMatchBgColor = (match: number) => {
-    if (match >= 80) return "text-green-600";
-    if (match >= 60) return "text-yellow-600";
-    if (match >= 40) return "text-orange-600";
-    return "text-red-600";
+    if (match >= 80) return "text-green-600 dark:text-green-400";
+    if (match >= 60) return "text-yellow-600 dark:text-yellow-400";
+    if (match >= 40) return "text-orange-600 dark:text-orange-400";
+    return "text-red-600 dark:text-red-400";
   };
 
   const getMatchStrokeColor = (match: number) => {
@@ -288,10 +227,11 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
   return (
     <div>
       <h2 className="text-3xl font-bold text-blue-600 mb-2 dark:text-blue-500">
-        Analysis Results
+        Analysis Results {isAnalyzing && <span className="text-sm ml-2">(Analyzing...)</span>}
       </h2>
       <p className="text-gray-600 mb-8 dark:text-white">
         Here's how your profile matches with the job description
+        <span className="text-green-500 text-sm ml-2">✓ AI-powered by Ollama</span>
       </p>
       <div className="mt-6 flex items-center gap-2 mb-20">
         <div className="w-12 h-1 bg-blue-500 rounded-full"></div>
@@ -299,59 +239,58 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
         <div className="w-3 h-1 bg-blue-200 rounded-full"></div>
       </div>
 
-      {/* ==== Profile Summary ==== */}
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-8 dark:bg-red-900/20 dark:border-red-800">
+          <p className="text-red-600 dark:text-red-400">{error}</p>
+          <p className="text-sm text-red-500 mt-2 dark:text-red-300">
+            Make sure Ollama is installed and running: <code className="bg-red-100 px-1 rounded">ollama serve</code>
+          </p>
+        </div>
+      )}
+
+      {/* Profile Summary */}
       <div className="bg-gray-50 rounded-xl p-6 mb-8 dark:bg-gray-700">
         <h3 className="text-lg font-semibold text-gray-800 mb-2 dark:text-white">
-          You Selected
+          Your Profile
         </h3>
         <div className="grid md:grid-cols-3 gap-6">
           <div>
-            <p className="text-sm text-gray-800 mb-1 dark:text-white">Role</p>
-            <p className="font-medium text-blue-600">
+            <p className="text-sm text-gray-600 mb-1 dark:text-gray-300">Target Role</p>
+            <p className="font-medium text-blue-600 dark:text-blue-400">
               {profile.roles && profile.roles.length > 0 
-                    ? profile.roles.join(", ") 
-                    : "No roles specified"}
+                ? profile.roles.join(", ") 
+                : "Not specified"}
             </p>
           </div>
-
           <div>
-            <p className="text-sm text-gray-800 mb-1 dark:text-white">Experience</p>
-            <p className="font-medium text-blue-600">
-              {profile.experience || "No specified"}
+            <p className="text-sm text-gray-600 mb-1 dark:text-gray-300">Experience</p>
+            <p className="font-medium text-blue-600 dark:text-blue-400">
+              {profile.experience || "Not specified"}
             </p>
           </div>
-
           <div>
-            <p className="text-sm text-gray-800 mb-1 dark:text-white">Skills</p>
-            <p className="font-medium text-blue-600">
-              {profile.skills.join(", ")}
+            <p className="text-sm text-gray-600 mb-1 dark:text-gray-300">Skills</p>
+            <p className="font-medium text-blue-600 dark:text-blue-400">
+              {profile.skills.length} skills selected
             </p>
           </div>
         </div>
       </div>
 
-      {/* ==== Overall Percentage ==== */}
+      {/* Overall Match Circle */}
       <div className="text-center mb-12">
         <div className="relative w-48 h-48 mx-auto">
           <div className="absolute inset-8 flex items-center justify-center">
             <div className="text-center">
-              <div
-                className={`text-5xl font-bold ${getMatchColor(matchNumber)}`}
-              >
-                {analysis.match}%
+              <div className={`text-5xl font-bold ${getMatchColor(matchNumber)}`}>
+                {isAnalyzing ? "..." : analysis.match}%
               </div>
-              <div className="text-gray-600 mt-2 dark:text-white">Overall Match</div>
+              <div className="text-gray-600 mt-2 dark:text-gray-300">Overall Match</div>
             </div>
           </div>
           <svg className="w-full h-full transform -rotate-90">
-            <circle
-              cx="96"
-              cy="96"
-              r="88"
-              stroke="#e5e7eb"
-              strokeWidth="16"
-              fill="none"
-            />
+            <circle cx="96" cy="96" r="88" stroke="#e5e7eb" strokeWidth="16" fill="none" />
             <circle
               cx="96"
               cy="96"
@@ -361,207 +300,76 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
               fill="none"
               strokeLinecap="round"
               strokeDasharray={`${matchNumber * 5.52} 552`}
-              style={{
-                transition: "stroke-dasharray 1s ease-in-out",
-                animation: "dash 1s ease-in-out forwards"
-              }}
+              style={{ transition: "stroke-dasharray 1s ease-in-out" }}
             />
           </svg>
         </div>
-        <div
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${getMatchBgColor(matchNumber)}`}
-        >
-          <div
-            className={`w-3 h-3 rounded-full ${getMatchColor(matchNumber).replace("text-", "bg-")}`}
-          ></div>
+      </div>
+
+      {/* Skills Match Section */}
+      <div className="bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-700">
+        <h3 className="text-lg font-bold text-gray-800 mb-4 dark:text-white">
+          Skill Match ({analysis.matchingSkills.length}/{analysis.techSkill.length})
+        </h3>
+        <div className="mb-6">
+          <p className="text-sm text-gray-600 mb-3 dark:text-gray-300">
+            ✅ Skills you have that match the job:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {analysis.matchingSkills.length > 0 ? (
+              analysis.matchingSkills.map((skill, index) => (
+                <span key={index} className="px-3 py-1.5 bg-green-100 text-green-800 rounded-lg text-sm font-medium dark:bg-green-900/30 dark:text-green-300">
+                  {skill}
+                </span>
+              ))
+            ) : (
+              <span className="text-gray-500 italic dark:text-gray-400">
+                {isAnalyzing ? "Analyzing..." : "No matching skills found"}
+              </span>
+            )}
+          </div>
+        </div>
+        <div>
+          <p className="text-sm text-gray-600 mb-3 dark:text-gray-300">
+            ⚠️ Skills you're missing:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {analysis.missingSkills.length > 0 ? (
+              analysis.missingSkills.slice(0, 8).map((skill, index) => (
+                <span key={index} className="px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg text-sm font-medium dark:bg-orange-900/30 dark:text-orange-300">
+                  {skill}
+                </span>
+              ))
+            ) : (
+              <span className="text-gray-500 italic dark:text-gray-400">
+                {isAnalyzing ? "Analyzing..." : "Perfect match! No missing skills"}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid md:gird-cols-2 gap-8">
-        <div className="space-y-6">
-          {/* ==== Role Requirement ====  */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-700">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 dark:text-white">
-                Role Requirement
-              </h3>
-
-              {/* What we found in job description */}
-              <div className="mb-4">
-                <div className=" bg-blue-50 rounded-lg dark:bg-gray-700 dark:text-white">
-                  {(() => {
-                    // Extract role requirements from text
-                    const text = profile.description.toLowerCase();
-                    const roleKeywords = [
-                      "frontend", "backend", "fullstack", "full stack", "software developer", "software engineer",
-                      "web developer", "ui developer", "ux designer", "product manager", "engineering manager", "machine learning",
-                      "AI engineer", "data scientist", "mobile developer", "IOS", "react native", "React", "android",
-                      "flutter", "devops", "cloud engineer", "cybersecurity", "security engineer",
-                    ];
-
-                    const foundRoles = roleKeywords.filter(
-                      (keyword) =>
-                        text.includes(keyword) ||
-                        text.includes(keyword.replace(" ", "")),
-                    );
-
-                    if (foundRoles.length > 0) {
-                      // Format and display found roles
-                      const formattedRoles = foundRoles.map(
-                        (role) => role.charAt(0).toUpperCase() + role.slice(1),
-                      );
-                      return (
-                        <p className="text-blue-700 font-medium dark:text-blue-600">
-                          {formattedRoles.slice(0, 10).join(", ")}
-                          {foundRoles.length > 10 && "..."}
-                        </p>
-                      );
-                    } else {
-                      return (
-                        <p className="text-gray-500 italic">
-                          No specific role mentioned
-                        </p>
-                      );
-                    }
-                  })()}
+      {/* Key Requirements Section */}
+      <div className="mt-6 bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-700">
+        <h3 className="text-lg font-bold text-gray-800 mb-4 dark:text-white">
+          📋 Key Requirements
+        </h3>
+        <ul className="space-y-3">
+          {analysis.requirements.length > 0 ? (
+            analysis.requirements.map((req, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-white font-bold text-[10px] leading-none">{index + 1}</span>
                 </div>
-              </div>
-              
-            </div>
-
-              {/* ==== Experience Requirement ==== */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-700">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 dark:text-white">
-                Experience Requirement
-              </h3>
-
-              {/* What we found in job description */}
-              <div className="mb-4 ">
-                <div className="bg-blue-50 rounded-lg dark:bg-gray-700">
-                  {(() => {
-                    // Extract experience requirements from text
-                    const text = profile.description;
-                    const expRegex =
-                      /(\d+)\+?\s*years?\s*(?:of)?\s*experience/gi;
-                    const matches = [...text.matchAll(expRegex)];
-
-                    if (matches.length > 0) {
-                      const expYears = matches.map((m) => parseInt(m[1]));
-                      const maxExp = Math.max(...expYears);
-                      return (
-                        <p className="text-blue-700 font-medium ">
-                          Requires: {maxExp}+ years of experience
-                        </p>
-                      );
-                    } else {
-                      // Look for experience keywords
-                      const expKeywords = [
-                        "senior", "lead", "principal", "staff", "mid-level", "mid level", "junior",
-                        "entry level", "entry-level",  "experienced", "expert",
-                      ];
-
-                      const foundKeywords = expKeywords.filter((keyword) =>
-                        text.toLowerCase().includes(keyword),
-                      );
-
-                      if (foundKeywords.length > 0) {
-                        const formatted =
-                          foundKeywords[0].charAt(0).toUpperCase() +
-                          foundKeywords[0].slice(1);
-                        return (
-                          <p className="text-blue-700 font-medium dark:text-blue-600">
-                            {formatted}
-                          </p>
-                        );
-                      } else {
-                        return (
-                          <p className="text-gray-500 italic ">
-                            No specific experience requirement mentioned
-                          </p>
-                        );
-                      }
-                    }
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ==== Skill Match ==== */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-700">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 dark:text-white">
-              Skill Match ({analysis.matchingSkills.length}/
-              {analysis.techSkill.length})
-            </h3>
-            <div className="mb-6">
-              <p className="text-sm text-gray-600 mb-3 dark:text-white">
-                Skills you have that match the job:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {analysis.matchingSkills.length > 0 ? (
-                  analysis.matchingSkills.map((skill, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1.5 bg-blue-200 text-blue-800 rounded-lg text-sm font-medium"
-                    >
-                    {skill}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-gray-500 italic">
-                    No matching skills found
-                  </span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div>
-                <p className="text-sm text-gray-600 mb-3 dark:text-white">
-                  Skills mentioned in job that you don't have:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.missingSkills.length > 0 ? (
-                    analysis.missingSkills.slice(0, 8).map((skill, index) => (
-                      <span
-                        key={index}
-                        className="px-3 py-1.5 bg-red-100 text-red-800 rounded-lg text-sm font-medium"
-                      >
-                        {skill}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-gray-500">
-                      No skills mentioned
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ==== Key Requirements ==== */}
-          <div className="space-y-6">
-            <div className="bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-700">
-              <h3 className="text-lg font-bold text-gray-800 mb-4 dark:text-white">
-                Key Requirements Found
-              </h3>
-              <ul className="space-y-3">
-                {analysis.requirements.map((req, index) => (
-                  <li key={index} className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-white font-bold text-[10px] leading-none">
-                        {index + 1}
-                      </span>
-                    </div>
-                    <span className="text-gray-700 dark:text-white">{req}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            
-          </div>
-        </div>
+                <span className="text-gray-700 dark:text-gray-200">{req}</span>
+              </li>
+            ))
+          ) : (
+            <li className="text-gray-500 italic dark:text-gray-400">
+              {isAnalyzing ? "Analyzing requirements..." : "No requirements extracted"}
+            </li>
+          )}
+        </ul>
       </div>
     </div>
   );
