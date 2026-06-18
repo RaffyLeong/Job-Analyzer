@@ -1,4 +1,4 @@
-// Step4.tsx - AI-powered job analysis with Groq (Free, works on Netlify)
+// Step4.tsx - AI-powered job analysis with Groq
 import { useEffect, useState } from "react";
 
 interface Step4Prop {
@@ -20,17 +20,19 @@ interface AnalysisType {
   missingSkills: string[];
 }
 
-// Get API key with fallback
+// Get API key with .env
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
 
 // ============================================
 // AI FUNCTION - Uses Groq (Free Tier)
 // ============================================
 const analyzeWithGroq = async (jobDescription: string, userProfile: any) => {
+  // check if have api key
   if (!GROQ_API_KEY) {
     throw new Error("Groq API key is not configured. Add NEXT_PUBLIC_GROQ_API_KEY to your environment variables.");
   }
 
+  // Prepare the prompt for the AI model
   const prompt = `You are a job matching expert. Analyze this job description against the candidate's profile.
 
 Return ONLY valid JSON with no extra text. Format exactly like this:
@@ -50,6 +52,7 @@ Candidate:
 Job Description:
 ${jobDescription.substring(0, 4000)}`;
 
+  // send the request to Groq API
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -57,7 +60,7 @@ ${jobDescription.substring(0, 4000)}`;
       "Authorization": `Bearer ${GROQ_API_KEY}`
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "llama-3.3-70b-versatile", // The AI model
       messages: [
         { 
           role: "system", 
@@ -70,6 +73,7 @@ ${jobDescription.substring(0, 4000)}`;
     })
   });
 
+  // handle errors
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error?.message || "API request failed");
@@ -83,6 +87,8 @@ ${jobDescription.substring(0, 4000)}`;
 // MAIN COMPONENT
 // ============================================
 const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
+
+  // start with default analysis state
   const [analysis, setAnalysis] = useState<AnalysisType>({
     match: "0",
     techSkill: [],
@@ -90,23 +96,30 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
     matchingSkills: [],
     missingSkills: [],
   });
+
+  // showing the "Analyzing..." loading state true/false 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // store any error messages from the AI analysis
   const [error, setError] = useState<string | null>(null);
 
-  // ============================================
-  // AI ANALYSIS
-  // ============================================
+  // -------- Main Analysis Function --------
   const analyzeJobDescription = async () => {
+    // Get the job description
     const text = profile.description;
     if (!text.trim()) return;
 
+    // Show the loading spinner and clear any old errors
     setIsAnalyzing(true);
     setError(null);
     
     try {
+       // -------- Call the AI function --------
       const aiResult = await analyzeWithGroq(text, profile);
       
+      // If the AI returned a valid response
       if (aiResult && aiResult.matchPercentage !== undefined) {
+        // Update the state with the AI's results
         setAnalysis({
           match: aiResult.matchPercentage.toString(),
           techSkill: aiResult.requiredSkills || [],
@@ -115,6 +128,7 @@ const Step4 = ({ profile, onMatchCalculated }: Step4Prop) => {
           requirements: (aiResult.requirements || []).slice(0, 5),
         });
         
+        // Calculated the match ??
         if (onMatchCalculated) {
           onMatchCalculated(aiResult.matchPercentage.toString());
         }
